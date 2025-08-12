@@ -98,3 +98,42 @@ static void push_tag_event(const struct tag_event *ev)
 	ring->head = next;
 	local_irq_restore(flags);
 }
+
+/* -----------------------
+ * LSM hook implementations
+ * -----------------------
+ *
+ * Minimal examples of LSM hooks for read/write and send/recv.
+ * For file read/write you should implement file_read_iter/file_write_iter
+ * hooks with careful handling of scatter/gather iov_iter cases.
+ */
+
+/* socket_recvmsg: called after the kernel receives into the buffer.
+ */
+static int ksight_socket_recvmsg(struct socket *sock, struct msghdr *msg,
+				 int size, int flags)
+{
+	struct tag_event ev;
+	struct iovec iov;
+
+	if (!msg || !msg->msg_iter.count || msg->msg_iter.count == 0)
+		return 0;
+
+	ev.pid = (u32)task_pid_nr(current);
+	ev.tid = (u32)task_tgid_nr(current);
+	ev.timestamp_ns = ktime_get_ns();
+	ev.addr_start = (unsigned long)iov.iov_base;
+	ev.addr_end = ev.addr_start + size;
+	ev.tag_id = 0x00000001;
+	ev.op_type = 2; /* recv */
+
+	push_tag_event(&ev);
+	return 0;
+}
+
+/* Register only the most relevant hooks you need. Add file_read_iter/file_write_iter
+ * hooks later once you implement correct iov_iter parsing and tag lookup.
+ */
+static struct security_hook_list ksight_hooks[] __ro_after_init = {
+	LSM_HOOK_INIT(socket_recvmsg, ksight_socket_recvmsg),
+};
