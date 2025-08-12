@@ -1,0 +1,5 @@
+.clangd
+*.cmd
+*.mod
+*.o
+*.order
