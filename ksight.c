@@ -163,3 +163,138 @@ static struct security_hook_list ksight_hooks[] __ro_after_init = {
 	LSM_HOOK_INIT(socket_recvmsg, ksight_socket_recvmsg),
 	LSM_HOOK_INIT(socket_sendmsg, ksight_socket_sendmsg),
 };
+
+/* -----------------------
+ * Platform driver
+ * -----------------------
+ */
+
+static ssize_t ring_phys_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
+{
+	if (!ring)
+		return sprintf(buf, "0\n");
+	return sprintf(buf, "0x%pad\n", &ring_dma_handle);
+}
+static DEVICE_ATTR_RO(ring_phys);
+
+/* Interruption request handler */
+static irqreturn_t ksight_irq_handler(int irq, void *dev_id)
+{
+	/* TODO: handle FPGA -> CPU interrupts (e.g., tail update, wakeups) */
+	/* TODO: Clear IRQ in FPGA registers. */
+	return IRQ_HANDLED;
+}
+
+/* Allocate DMA-coherent ring buffer */
+static int allocate_ring_buffer(struct device *dev)
+{
+	size_t size = sizeof(struct ring_buffer);
+
+	ring = dma_alloc_coherent(dev, size, &ring_dma_handle, GFP_KERNEL);
+	if (!ring)
+		return -ENOMEM;
+
+	/* zero and init */
+	memset(ring, 0, size);
+	/* initial head = 0; already zeroed */
+	dev_info(dev, "ring allocated virt=%p phys=%pad size=%zu\n",
+		 ring, &ring_dma_handle, size);
+	return 0;
+}
+
+static void free_ring_buffer(struct device *dev)
+{
+	if (!ring)
+		return;
+	dma_free_coherent(dev, sizeof(struct ring_buffer), ring, ring_dma_handle);
+	ring = NULL;
+	ring_dma_handle = 0;
+}
+
+/* Platform probe: map regs, allocate ring, create sysfs attr, request IRQ if present */
+static int ksight_platform_driver_probe(struct platform_device *pdev)
+{
+	int ret = 0;
+	struct resource *res;
+
+	gdev = &pdev->dev;
+
+	/* TODO: map registers */
+	// res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	// if (res) {
+	// 	regs_base = devm_ioremap_resource(gdev, res);
+	// 	if (IS_ERR(regs_base)) {
+	// 		dev_err(gdev, "failed to map regs\n");
+	// 		return PTR_ERR(regs_base);
+	// 	}
+	// 	dev_info(gdev, "regs mapped at %p\n", regs_base);
+	// }
+
+	/* allocate ring buffer DMA memory tied to this device */
+	ret = allocate_ring_buffer(gdev);
+	if (ret) {
+		dev_err(gdev, "dma allocation failed: %d\n", ret);
+		return ret;
+	}
+
+	/* export physical address to userspace via sysfs attr */
+	ret = device_create_file(gdev, &dev_attr_ring_phys);
+	if (ret) {
+		dev_err(gdev, "failed to create sysfs attr\n");
+		free_ring_buffer(gdev);
+		return ret;
+	}
+
+	/* TODO: request IRQ */
+	// g_irq = platform_get_irq(pdev, 0);
+	// if (g_irq > 0) {
+	// 	ret = devm_request_irq(gdev, g_irq, ksight_irq_handler, 0,
+	// 			       dev_name(gdev), NULL);
+	// 	if (ret) {
+	// 		dev_warn(gdev, "request_irq failed: %d\n", ret);
+	// 		/* non-fatal: continue without IRQ */
+	// 	} else {
+	// 		dev_info(gdev, "irq %d registered\n", g_irq);
+	// 	}
+	// }
+
+	dev_info(gdev, "probe completed: ring phys at 0x%pad\n", &ring_dma_handle);
+	return 0;
+}
+
+static int ksight_platform_driver_remove(struct platform_device *pdev)
+{
+	/* remove sysfs entry first */
+	device_remove_file(&pdev->dev, &dev_attr_ring_phys);
+
+	/* free ring and other resources */
+	free_ring_buffer(&pdev->dev);
+
+	/* devm_ioremap_resource and devm_request_irq are freed automatically */
+	dev_info(&pdev->dev, "removed\n");
+	return 0;
+}
+
+
+/**
+ * Open Firmware Device Identifier Matching Table
+ */
+static const struct of_device_id ksight_of_match[] = {
+	{ .compatible = "sushi,ksight", },
+	{ /* end of table */ }
+};
+MODULE_DEVICE_TABLE(of, ksight_of_match);
+
+/**
+ * Platform Driver Structure
+ */
+static struct platform_driver ksight_platform_driver = {
+	.probe = ksight_platform_driver_probe,
+	.remove = ksight_platform_driver_remove,
+	.driver = {
+		.owner = THIS_MODULE,
+		.name = DRIVER_NAME,
+		.of_match_table = ksight_of_match,
+	},
+};
