@@ -298,3 +298,41 @@ static struct platform_driver ksight_platform_driver = {
 		.of_match_table = ksight_of_match,
 	},
 };
+
+/* -----------------------
+ * Module init / exit
+ * -----------------------
+ */
+
+static int __init ksight_init(void)
+{
+	int ret;
+
+	/* register platform driver (probe will allocate DMA ring when device present) */
+	ret = platform_driver_register(&ksight_platform_driver);
+	if (ret) {
+		pr_err("platform_driver_register failed: %d\n", ret);
+		return ret;
+	}
+
+	/* register LSM hooks (once registered, not easily unregisterable).
+	 * Hooks must exist before kernel security checks if required.
+	 */
+	security_add_hooks(ksight_hooks, ARRAY_SIZE(ksight_hooks), "ksight");
+
+	pr_info("ksight:: module initialized\n");
+	return 0;
+}
+
+static void __exit ksight_exit(void)
+{
+	/* platform driver unregister; if probe allocated ring, remove will free it. */
+	platform_driver_unregister(&ksight_platform_driver);
+	pr_info("ksight: module exiting\n");
+}
+
+module_init(ksight_init);
+module_exit(ksight_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Platform driver & LSM hooks for FPGA DIFT co-processor Hardblare-NG");
