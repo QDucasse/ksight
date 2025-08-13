@@ -1,5 +1,5 @@
 /*
- * ksight_platform.c
+ * ksight.c
  *
  * Combined minimal platform driver + LSM hook module for ZCU104 FPGA co-processor.
  * - Platform driver: binds via device tree, maps regs, allocates DMA-coherent ring
@@ -7,10 +7,9 @@
  * - LSM: registers socket recv/send hooks and emits tag_event entries into the
  *   DMA ring buffer (if allocated).
  *
- * Kernel: tested conceptually for 6.1 (PetaLinux 2023.1). Adapt file-read hooks
- * and tag lookups to your system.
  *
- * Build as out-of-tree module against matching kernel headers.
+ * Build as out-of-tree module against matching kernel headers > Does not work as the
+ * registration API is not available out of source.
  */
 
 #include <linux/dma-mapping.h>
